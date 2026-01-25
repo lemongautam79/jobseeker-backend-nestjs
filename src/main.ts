@@ -47,17 +47,17 @@ async function bootstrap() {
       },
       'JWT-auth',
     )
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        name: 'Refresh-JWT',
-        description: 'Enter refresh JWT token',
-        in: 'header',
-      },
-      'JWT-refresh',
-    )
+    // .addBearerAuth(
+    //   {
+    //     type: 'http',
+    //     scheme: 'bearer',
+    //     bearerFormat: 'JWT',
+    //     name: 'Refresh-JWT',
+    //     description: 'Enter refresh JWT token',
+    //     in: 'header',
+    //   },
+    //   'JWT-refresh',
+    // )
     .addServer('http://localhost:7000', 'Development server')
     .build();
 
