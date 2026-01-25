@@ -1,44 +1,40 @@
-// Jwt Strategy for auth requests
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { PassportStrategy } from '@nestjs/passport';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { ConfigService } from '@nestjs/config';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { User, UserDocument } from 'src/modules/users/schemas/user.schema';
 
-import { Injectable, UnauthorizedException } from "@nestjs/common";
-import { PassportStrategy } from "@nestjs/passport";
-import { ConfigService } from "@nestjs/config";
-import { ExtractJwt, Strategy } from "passport-jwt";
-import { MongooseService } from "src/mongoose/mongoose.service";
+interface JwtPayload {
+    sub: string;
+    email: string;
+    role: string;
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
     constructor(
-        private mongoose: MongooseService,
-        private configService: ConfigService
+        @InjectModel(User.name)
+        private readonly userModel: Model<UserDocument>,
+        private readonly configService: ConfigService,
     ) {
         super({
             jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
             ignoreExpiration: false,
-            secretOrKey: configService.get<string>('JWT_SECRET') || 'defaultsecretkey',
+            secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
         });
     }
 
-    // Validate JWT payload
-    async validate(payload: { sub: string, email: string }) {
-        const user = await this.mongoose.user.findUnique({
-            where: { id: payload.sub },
-            select: {
-                id: true,
-                email: true,
-                firstName: true,
-                lastName: true,
-                role: true,
-                createdAt: true,
-                updatedAt: true,
-                password: false
-            }
-        });
+    async validate(payload: JwtPayload) {
+        const user = await this.userModel
+            .findById(payload.sub)
+            .select('-password');
 
         if (!user) {
             throw new UnauthorizedException('User not found');
         }
 
-        return user;
+        return user; // attaches to req.user
     }
 }

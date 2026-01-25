@@ -1,39 +1,92 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
+import { ApiProperty } from '@nestjs/swagger';
+import { Exclude } from 'class-transformer';
+import { Role } from 'src/common/enums/role';
 
 export type UserDocument = HydratedDocument<User>;
 
 @Schema({ timestamps: true })
 export class User {
+
+    _id: Types.ObjectId;
+
+    createdAt: Date;
+    updatedAt: Date;
+
+    @ApiProperty({
+        example: "John Doe",
+        description: "Provide Username",
+        required: true
+    })
     @Prop({ required: true })
     name: string;
 
+    @ApiProperty({
+        example: "johndoe@gmail.com",
+        description: "Provide the email of the User",
+        required: true
+    })
     @Prop({ required: true, unique: true, lowercase: true })
     email: string;
 
-    @Prop({ required: true })
+    @ApiProperty({
+        example: "******",
+        description: "Provide the password of the User",
+        required: true
+    })
+    @Prop({
+        required: true,
+    })
+    @Exclude()
     password: string;
 
-    @Prop({ required: true, enum: ['JOBSEEKER', 'EMPLOYER', 'ADMIN'] })
-    role: 'JOBSEEKER' | 'EMPLOYER' | 'ADMIN';
+    @ApiProperty({
+        example: "JOBSEEKER|EMPLOYER|ADMIN",
+        description: "Provide the role of the User",
+        required: true
+    })
+    @Prop({ required: true, enum: Role, default: Role.JOBSEEKER })
+    role: Role;
 
+    @ApiProperty({
+        example: "janedone.jpg",
+        description: "Provide the avatar of the User",
+
+    })
     @Prop()
     avatar?: string;
 
+    @ApiProperty({
+        example: "janedone.jpg",
+        description: "Provide the resume of the User",
+    })
     @Prop()
     resume?: string;
 
+    @ApiProperty({
+        example: "Company Name Pvt. Ltd",
+        description: "Provide the name of the company",
+    })
     @Prop()
     companyName?: string;
 
+    @ApiProperty({
+        example: "Company Description",
+        description: "Provide the Description of the company",
+    })
     @Prop()
     companyDescription?: string;
 
+    @ApiProperty({
+        example: "companylogo.jpg",
+        description: "Provide the logo of the Company",
+    })
     @Prop()
     companyLogo?: string;
 
-    matchPassword?: (enteredPassword: string) => Promise<boolean>;
+    matchPassword: (enteredPassword: string) => Promise<boolean>;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
