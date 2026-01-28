@@ -10,8 +10,8 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
-  prefix: '/uploads',
-});
+    prefix: '/uploads',
+  });
 
   // Project description
   app.setGlobalPrefix('api/v1');
@@ -75,7 +75,9 @@ async function bootstrap() {
       operationsSorter: 'alpha',
     },
     customSiteTitle: 'API Documentation',
-    customfavIcon: 'https://www.lemongautam.com.np/logo.svg',
+    // customfavIcon: 'https://www.lemongautam.com.np/logo.svg',
+    customfavIcon: 'https://i.imgur.com/Bk96b3D.png',
+
     customCss: `
       .swagger-ui .topbar {display: none}
       .swagger-ui .info { margin: 50px 0; }
