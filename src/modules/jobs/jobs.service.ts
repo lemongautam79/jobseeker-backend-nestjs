@@ -26,7 +26,7 @@ export class JobsService {
     @InjectModel(Job.name) private jobModel: Model<JobDocument>,
     @InjectModel(Application.name) private appModel: Model<ApplicationDocument>,
     // @InjectModel(SavedJob.name) private savedJobModel: Model<SavedJobDocument>,
-  ) { }
+  ) {}
 
   /**
    *! Create Job
@@ -107,8 +107,8 @@ export class JobsService {
   //   });
   // }
 
-  async findAll(queryDto: JobQueryDto) {
-    return await "Hello World";
+  findAll(queryDto: JobQueryDto) {
+    return 'Hello World';
   }
 
   /**
