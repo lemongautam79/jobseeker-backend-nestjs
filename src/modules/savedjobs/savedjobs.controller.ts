@@ -19,7 +19,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { Role } from 'src/common/enums/role';
-import { SavedjobsService } from './jobs/savedjobs.service';
+import { SavedJobsService } from './savedJobs.service';
 
 /**
  *! Saved Jobs API controller
@@ -31,7 +31,7 @@ import { SavedjobsService } from './jobs/savedjobs.service';
 @Roles(Role.JOBSEEKER)
 export class SavedJobsController {
   //! DI
-  constructor(private readonly savedJobsService: SavedjobsService) {}
+  constructor(private readonly savedJobsService: SavedJobsService) {}
 
   /**
    *! Save a job for later
@@ -62,7 +62,7 @@ export class SavedJobsController {
     description: 'Internal Server Error',
   })
   async saveJob(@Req() req, @Param('jobId') jobId: string) {
-    return this.savedJobsService.saveJob(jobId, req.user._id);
+    return await this.savedJobsService.saveJob(jobId, req.user._id);
   }
 
   /**
@@ -94,7 +94,7 @@ export class SavedJobsController {
     description: 'Internal Server Error',
   })
   async unsaveJob(@Req() req, @Param('jobId') jobId: string) {
-    return this.savedJobsService.unsaveJob(jobId, req.user._id);
+    return await this.savedJobsService.unsaveJob(jobId, req.user._id);
   }
 
   /**
@@ -126,6 +126,6 @@ export class SavedJobsController {
     description: 'Internal Server Error',
   })
   async getMySavedJobs(@Req() req) {
-    return this.savedJobsService.getMySavedJobs(req.user._id);
+    return await this.savedJobsService.getMySavedJobs(req.user._id);
   }
 }
