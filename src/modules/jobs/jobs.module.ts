@@ -9,7 +9,6 @@ import {
 } from '../applications/schemas/application.schema';
 // import { SavedJob, SavedJobSchema } from '../savedJobs/schemas/savedJob.schema';
 
-
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -21,4 +20,4 @@ import {
   controllers: [JobsController],
   providers: [JobsService],
 })
-export class JobsModule { }
+export class JobsModule {}
