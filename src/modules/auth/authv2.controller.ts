@@ -10,6 +10,8 @@ import {
     UseInterceptors,
     UploadedFile,
     BadRequestException,
+    Res,
+    UnauthorizedException,
 } from '@nestjs/common';
 import {
     ApiBearerAuth,
@@ -28,11 +30,16 @@ import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { multerOptions } from 'src/common/middlewares/fileupload/singlefileupload.middleware';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { VerifyEmailDto } from './dto/verifyEmail.dto';
 import { ModerateThrottler, StrictThrottler } from 'src/common/decorators/custom-throttler.decorator';
 import { AuthV2Service } from './authv2.service';
+import { ConfigService } from '@nestjs/config';
+import { ResendOtpDto } from './dto/resendOtp.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { VerifyOtpDto } from './dto/verifyOtp.dto';
 
 /**
  *! Auth V1 API controller
@@ -46,6 +53,7 @@ export class AuthV2Controller {
     //! DI
     constructor(
         private readonly authV2Service: AuthV2Service,
+        private readonly configService: ConfigService,
         private usersService: UsersService,
         private jwtService: JwtService,
     ) { }
@@ -126,7 +134,7 @@ export class AuthV2Controller {
     @StrictThrottler()
     @ApiOperation({
         summary: 'Login user',
-        description: 'Authenticates a user and returns access and refresh tokens',
+        description: 'Authenticates a user and returns access token, refresh token stored in httpOnly cookie',
     })
     @ApiResponse({
         status: 200,
@@ -141,15 +149,34 @@ export class AuthV2Controller {
         status: 429,
         description: 'Too Many Requests',
     })
-    async login(@Body() loginDto: LoginDto): Promise<AuthResponseDto> {
-        return this.authV2Service.login(loginDto);
+    async login(
+        @Body() loginDto: LoginDto,
+        @Res({ passthrough: true }) res: Response,
+
+    ): Promise<AuthResponseDto> {
+        const { accessToken, refreshToken, user } = await this.authV2Service.login(loginDto);
+
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: this.configService.get('NODE_ENV') === 'production',
+            sameSite: 'none',   // production
+            path: '/api/v2/auth/refresh',
+            maxAge: loginDto.rememberMe
+                ? 1000 * 60 * 60 * 24 * 7   // 7 days
+                : 1000 * 60 * 60 * 24,     // 1 day
+        });
+
+        return {
+            accessToken,
+            user,
+        };
     }
 
     //! Refresh access token
     @Post('refresh')
     @HttpCode(HttpStatus.OK)
-    @UseGuards(RefreshTokenGuard)
-    @ApiBearerAuth('JWT-refresh')
+    @UseGuards(JwtAuthGuard)
+    // @ApiBearerAuth('JWT-refresh')
     @StrictThrottler()
     @ApiOperation({
         summary: 'Refresh access token',
@@ -168,8 +195,30 @@ export class AuthV2Controller {
         status: 429,
         description: 'Too Many Requests',
     })
-    async refresh(@GetUser('id') userId: string): Promise<AuthResponseDto> {
-        return await this.authV2Service.refreshTokens(userId);
+    async refresh(
+        // @GetUser('id') userId: string,
+        @Req() req: Request,
+        @Res({ passthrough: true }) res: Response,
+    ): Promise<AuthResponseDto> {
+
+        const refreshToken = req.cookies.refreshToken;
+
+        if (!refreshToken) throw new UnauthorizedException('Refresh Token not found in the http-only cookie');
+
+        const { accessToken, newRefreshToken, user, remainingMs } = await this.authV2Service.refreshTokens(refreshToken);
+
+        res.cookie('refreshToken', newRefreshToken, {
+            httpOnly: true,
+            secure: this.configService.get('NODE_ENV') === 'production',
+            sameSite: 'none',   // production
+            path: '/api/v2/auth/refresh',
+            maxAge: remainingMs
+        });
+
+        return {
+            accessToken,
+            user,
+        };
     }
 
     //! Forgot Password
@@ -179,6 +228,9 @@ export class AuthV2Controller {
     @ApiOperation({
         summary: 'Forgot Password',
         description: 'Sends OTP at gmail to reset user password'
+    })
+    @ApiBody({
+        type: ForgotPasswordDto,
     })
     @ApiResponse({
         status: 200,
@@ -197,17 +249,19 @@ export class AuthV2Controller {
         status: 500,
         description: 'Internal Server Error',
     })
-    async forgotPassword(@Body() email: string): Promise<{ message: String }> {
-        return this.authV2Service.forgotPassword(email);
+    async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: String }> {
+        return this.authV2Service.forgotPassword(dto.email);
     }
 
     //! Verify OTP
     @Post('verify_otp')
-    @UseGuards(JwtAuthGuard)
     @StrictThrottler()
     @HttpCode(HttpStatus.OK)
     @ApiOperation({
         summary: 'Verifies your OTP',
+    })
+    @ApiBody({
+        type: VerifyOtpDto
     })
     @ApiResponse({
         status: 200,
@@ -218,17 +272,19 @@ export class AuthV2Controller {
         status: 429,
         description: 'Too Many Requests',
     })
-    async verifyOtp(@Body() email: string, otp: string) {
-        return this.authV2Service.verifyOtp(email, otp);
+    async verifyOtp(@Body() dto: VerifyOtpDto) {
+        return this.authV2Service.verifyOtp(dto.email, dto.otp, dto.type);
     }
 
     //! Resend Otp
     @Post('resend_otp')
-    @UseGuards(JwtAuthGuard)
     @StrictThrottler()
     @HttpCode(HttpStatus.OK)
     @ApiOperation({
         summary: 'Verifies your OTP',
+    })
+    @ApiBody({
+        type: ResendOtpDto,
     })
     @ApiResponse({
         status: 200,
@@ -239,18 +295,20 @@ export class AuthV2Controller {
         status: 429,
         description: 'Too Many Requests',
     })
-    async resendOtp(@Body() email: string) {
-        return this.authV2Service.resendOtp(email);
+    async resendOtp(@Body() dto: ResendOtpDto) {
+        return this.authV2Service.resendOtp(dto.email);
     }
 
     //! Reset Password
     @Post('reset_password')
-    @UseGuards(JwtAuthGuard)
     @StrictThrottler()
     @HttpCode(HttpStatus.OK)
     @ApiOperation({
         summary: 'Resets Password',
         description: 'Resets user password with new password'
+    })
+    @ApiBody({
+        type: ResetPasswordDto,
     })
     @ApiResponse({
         status: 200,
@@ -261,8 +319,8 @@ export class AuthV2Controller {
         status: 429,
         description: 'Too Many Requests',
     })
-    async resetPassword(@Body() email: string, password: string): Promise<{ message: String }> {
-        return this.authV2Service.resetPassword(email, password);
+    async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: String }> {
+        return this.authV2Service.resetPassword(dto.email, dto.newPassword);
     }
 
     /**

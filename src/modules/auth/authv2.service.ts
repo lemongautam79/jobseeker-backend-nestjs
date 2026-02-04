@@ -1,5 +1,6 @@
 import {
     BadRequestException,
+    ForbiddenException,
     Injectable,
     InternalServerErrorException,
     NotFoundException,
@@ -40,25 +41,41 @@ export class AuthV2Service {
 
     //? Generate access and response tokens
     private async generateTokens(
-        userId: string,
+        userId: any,
         email: string,
-        role: string
+        role: string,
+        rememberMe = false,
+        refreshExpiresInSeconds?: number,
     ): Promise<{ accessToken: string, refreshToken: string }> {
         const payload = { sub: userId, email, role };
         const refreshId = randomBytes(16).toString('hex');
 
+        const refreshExpires = refreshExpiresInSeconds
+            ? `${refreshExpiresInSeconds}s`
+            : rememberMe
+                ? this.configService.get('REFRESH_TOKEN_REMEMBER_TIME') //7d
+                : this.configService.get('REFRESH_TOKEN_TIME');// 1d
+
         const [accessToken, refreshToken] = await Promise.all([
-            this.jwtService.signAsync(payload, { expiresIn: this.configService.get('ACCESS_TOKEN_TIME') }),
-            this.jwtService.signAsync({ ...payload, rid: refreshId }, { expiresIn: this.configService.get('REFRESH_TOKEN_TIME') })
+            this.jwtService.signAsync(payload, {
+                expiresIn: this.configService.get('ACCESS_TOKEN_TIME'),
+            }),
+            this.jwtService.signAsync(
+                { ...payload, rid: refreshId },
+                { expiresIn: refreshExpires },
+            ),
         ]);
+
         return { accessToken, refreshToken };
     }
 
     //? Update refresh token in database during logins etc
-    async updateRefreshToken(userId: string, refreshToken: string): Promise<void> {
+    async updateRefreshToken(userId: string, refreshToken: string, expiresAt: Date): Promise<void> {
+        const hashed = await bcrypt.hash(refreshToken, 10);
+
         await this.UserModel.updateOne(
             { _id: userId },                 // filter
-            { $set: { refreshToken } },      // update
+            { $set: { refreshToken: hashed, refreshTokenExpiresAt: expiresAt } },
         );
     }
 
@@ -70,6 +87,7 @@ export class AuthV2Service {
             email: user.email,
             avatar: user.avatar,
             role: user.role,
+            rememberMe: user.rememberMe,
             companyName: user.companyName || '',
             companyDescription: user.companyDescription || '',
             companyLogo: user.companyLogo || '',
@@ -80,19 +98,37 @@ export class AuthV2Service {
     /**
      *! Refresh access token
      */
-    async refreshTokens(userId: string): Promise<AuthResponseDto> {
-        const user = await this.UserModel.findById(userId).select('-password');
+    async refreshTokens(refreshToken: string) {
 
-        if (!user) {
-            throw new UnauthorizedException("User not Found")
-        }
+        const payload = await this.jwtService.verifyAsync(refreshToken);
 
-        const tokens = await this.generateTokens(user.id, user.email, user.role)
-        await this.updateRefreshToken(user.id, tokens.refreshToken)
+        const user = await this.UserModel.findById(payload.sub).select('-password');
+
+        if (!user || !user.refreshToken)
+            throw new UnauthorizedException();
+
+        const matches = await bcrypt.compare(refreshToken, user.refreshToken);
+
+        if (!matches) throw new ForbiddenException('Refresh Token doesnot match ');
+
+        const remainingMs = user.refreshTokenExpiresAt.getTime() - Date.now();
+        if (remainingMs <= 0) throw new UnauthorizedException('Refresh token expired');
+
+        const tokens = await this.generateTokens(
+            user._id,
+            user.email,
+            user.role,
+            undefined,
+            Math.floor(remainingMs / 1000)
+        );
+
+        await this.updateRefreshToken(user.id, tokens.refreshToken, user.refreshTokenExpiresAt)
 
         return {
-            ...tokens,
-            user: this.buildResponse(user)
+            accessToken: tokens.accessToken,
+            newRefreshToken: tokens.refreshToken,
+            user: this.buildResponse(user),
+            remainingMs,
         }
     }
 
@@ -110,9 +146,6 @@ export class AuthV2Service {
         try {
             const hashedPassword = await bcrypt.hash(password, this.SALT_ROUNDS);
 
-            const otp = generateOtp();
-            const hashedOtp = hashOtp(otp);
-
             const user = await this.UserModel.create({
                 name,
                 email,
@@ -120,17 +153,19 @@ export class AuthV2Service {
                 role,
                 avatar,
                 isEmailVerified: false,
-                emailOtp: hashedOtp,
-                emailOtpExpiresAt: otpExpiry(this.configService.get('OTP_EXPIRY_TIME'))
             });
 
-            // const tokens = await this.generateTokens(user.id, user.email, user.role);
-            // await this.updateRefreshToken(user.id, tokens.refreshToken);
+            // Generate OTP
+            const otp = generateOtp();
+            const hashedOtp = await bcrypt.hash(otp, 10);
 
-            // return {
-            //   ...tokens,
-            //   user: this.buildResponse(user)
-            // }
+            // Save OTP in otpModel
+            await this.otpModel.create({
+                otp: hashedOtp,
+                expiresAt: otpExpiry(this.configService.get('OTP_EXPIRY_TIME')), // e.g., 10 minutes
+                userId: user._id,
+                type: 'VERIFY_EMAIL', // important to differentiate from forgot password
+            });
 
             const companyLogo = 'https://i.imgur.com/3KcynwC.png';
 
@@ -173,11 +208,12 @@ export class AuthV2Service {
     }
 
     /**
-  *! Verify Email
-  */
+     *! Verify Email
+     */
     async verifyEmail(dto: VerifyEmailDto): Promise<{ message: string }> {
         const { email, otp } = dto;
 
+        // Find the user
         const user = await this.UserModel.findOne({ email });
         if (!user) {
             throw new BadRequestException('Invalid email');
@@ -187,25 +223,46 @@ export class AuthV2Service {
             throw new BadRequestException('Email already verified');
         }
 
-        if (!user.emailOtp || !user.emailOtpExpiresAt) {
-            throw new BadRequestException('OTP not found');
+        // Find the latest verification OTP from otpModel
+        const otpRecord = await this.otpModel.findOne({
+            userId: user._id,
+            type: 'VERIFY_EMAIL',
+        });
+
+        if (!otpRecord) {
+            throw new BadRequestException('OTP not found or expired');
         }
 
-        if (user.emailOtpExpiresAt < new Date()) {
+        if (otpRecord.expiresAt < new Date()) {
+            // Optionally delete expired OTP
+            await this.otpModel.deleteOne({ _id: otpRecord._id });
             throw new BadRequestException('OTP expired');
         }
 
-        const hashedOtp = hashOtp(otp);
-
-        if (hashedOtp !== user.emailOtp) {
+        // Compare OTP
+        const hashedOtp = await bcrypt.hash(otp, 10);
+        if (hashedOtp !== otpRecord.otp) {
             throw new BadRequestException('Invalid OTP');
         }
 
+        // OTP is valid, mark user as verified
         user.isEmailVerified = true;
-        user.emailOtp = undefined;
-        user.emailOtpExpiresAt = undefined;
-
         await user.save();
+
+        // Delete OTP after successful verification
+        await this.otpModel.deleteOne({ _id: otpRecord._id });
+
+        // Generate access & refresh tokens
+        const tokens = await this.generateTokens(
+            user.id,
+            user.email,
+            user.role,
+            false, // rememberMe
+        );
+
+        // Save refresh token in DB
+        const refreshTokenExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24); // 1 day
+        await this.updateRefreshToken(user.id, tokens.refreshToken, refreshTokenExpiresAt);
 
         return { message: 'Email verified successfully. You can now login.' };
     }
@@ -213,8 +270,12 @@ export class AuthV2Service {
     /**
      *! Login User
      */
-    async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-        const { email, password } = loginDto;
+    async login(loginDto: LoginDto) {
+        const { email, password, rememberMe } = loginDto;
+
+        const refreshExpiresAt = rememberMe
+            ? new Date(Date.now() + 1000 * 60 * 60 * 24 * 7)
+            : new Date(Date.now() + 1000 * 60 * 60 * 24);
 
         const user = await this.usersService.findByEmail(email);
 
@@ -229,11 +290,17 @@ export class AuthV2Service {
             throw new UnauthorizedException('Please verify your email first');
         }
 
-        const tokens = await this.generateTokens(user.id, user.email, user.role)
-        await this.updateRefreshToken(user.id, tokens.refreshToken)
+        const tokens = await this.generateTokens(
+            user.id,
+            user.email,
+            user.role,
+            rememberMe
+        )
+        await this.updateRefreshToken(user.id, tokens.refreshToken, refreshExpiresAt)
 
         return {
-            ...tokens,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
             user: this.buildResponse(user)
         }
     }
@@ -251,12 +318,14 @@ export class AuthV2Service {
         const otp = generateOtp();
         const hashedOtp = await bcrypt.hash(otp, 10);
 
-        await this.otpModel.deleteMany({ userId: user._id }); // invalidate old OTPs
+        // Invalidate previous forgot password OTPs
+        await this.otpModel.deleteMany({ userId: user._id, type: 'FORGOT_PASSWORD' });
 
         await this.otpModel.create({
             otp: hashedOtp,
             expiresAt: otpExpiry(this.configService.get('OTP_EXPIRY_TIME')), // Expires in 10 mins
             userId: user._id,
+            type: 'FORGOT_PASSWORD',
         });
 
         const companyLogo = 'https://i.imgur.com/3KcynwC.png';
@@ -294,11 +363,11 @@ export class AuthV2Service {
     /**
    *! Verify Otp
    */
-    async verifyOtp(email: string, otp: string): Promise<boolean> {
+    async verifyOtp(email: string, otp: string, type: 'VERIFY_EMAIL' | 'FORGOT_PASSWORD'): Promise<boolean> {
         const user = await this.UserModel.findOne({ email });
         if (!user) throw new UnauthorizedException();
 
-        const otpRecord = await this.otpModel.findOne({ userId: user._id });
+        const otpRecord = await this.otpModel.findOne({ userId: user._id, type });
         if (!otpRecord) throw new UnauthorizedException('OTP expired');
 
         if (otpRecord.expiresAt < new Date()) {
@@ -308,6 +377,8 @@ export class AuthV2Service {
 
         const isValid = await bcrypt.compare(otp, otpRecord.otp);
         if (!isValid) throw new UnauthorizedException('Invalid OTP');
+
+        await this.otpModel.deleteOne({ _id: otpRecord._id });
 
         return true;
     }
@@ -322,16 +393,22 @@ export class AuthV2Service {
             throw new BadRequestException('Invalid email');
         }
 
-        if (user.isEmailVerified) {
-            throw new BadRequestException('Email already verified');
-        }
+        // if (user.isEmailVerified) {
+        //     throw new BadRequestException('Email already verified');
+        // }
 
         const otp = generateOtp();
+        const hashedOtp = await bcrypt.hash(otp, 10);
 
-        user.emailOtp = hashOtp(otp);
-        user.emailOtpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        // Invalidate previous verification OTPs
+        await this.otpModel.deleteMany({ userId: user._id, type: 'VERIFY_EMAIL' });
 
-        await user.save();
+        await this.otpModel.create({
+            otp: hashedOtp,
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+            userId: user._id,
+            type: 'VERIFY_EMAIL',
+        });
 
         const companyLogo = 'https://i.imgur.com/3KcynwC.png';
 
