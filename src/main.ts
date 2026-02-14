@@ -6,6 +6,7 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import cookieParser from 'cookie-parser';
+import { MetricsInterceptor } from './common/interceptors/metrics.interceptor';
 
 
 
@@ -98,6 +99,7 @@ async function bootstrap() {
   });
 
   // app.useGlobalFilters(new GlobalExceptionFilter());
+  app.useGlobalInterceptors(app.get(MetricsInterceptor));
 
   await app.listen(process.env.PORT ?? 7000);
 }
