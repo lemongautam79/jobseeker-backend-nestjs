@@ -110,7 +110,7 @@ async function bootstrap() {
     middleware.use(req, res, next);
   });
 
-  await app.listen(process.env.PORT ?? 7000);
+  await app.listen(process.env.PORT ?? 7000,'0.0.0.0');
 }
 
 bootstrap().catch((error) => {

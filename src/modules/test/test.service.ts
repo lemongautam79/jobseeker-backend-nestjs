@@ -1,51 +1,63 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+    Injectable,
+    BadRequestException,
+    UnauthorizedException,
+    ForbiddenException,
+    NotFoundException,
+    PayloadTooLargeException,
+    InternalServerErrorException,
+} from '@nestjs/common';
 
 @Injectable()
 export class TestService {
-
-    // Helper to pick a random value from an array
     private getRandomValue<T>(arr: T[]): T {
-        const index = Math.floor(Math.random() * arr.length);
-        return arr[index];
+        return arr[Math.floor(Math.random() * arr.length)];
     }
 
-    // Simulate a heavy task
+    private throwRandomHttpError(): never {
+        const errors = [
+            () => new BadRequestException('400 – Invalid request payload'),
+            () => new UnauthorizedException('401 – Unauthorized'),
+            () => new ForbiddenException('403 – Forbidden'),
+            () => new NotFoundException('404 – Resource not found'),
+            () => new PayloadTooLargeException('413 – Payload too large'),
+            () => new InternalServerErrorException('500 – DB Server Down'),
+        ];
+
+        throw this.getRandomValue(errors)();
+    }
+
     private async doSomeHeavyTask(): Promise<number> {
-        const ms = this.getRandomValue([100, 150, 200, 300, 600, 500, 1000, 1400, 2500]);
-        const shouldThrowError = this.getRandomValue([1, 2, 3, 4, 5, 6, 7, 8]) === 8;
+        const ms = this.getRandomValue([100, 200, 300, 500, 1000, 2000]);
 
-        if (shouldThrowError) {
-            const randomError = this.getRandomValue([
-                "DB Payment Failure",
-                "DB Server is Down",
-                "Access Denied",
-                "Not Found Error",
-            ]);
-            throw new InternalServerErrorException(randomError);
+        await new Promise((resolve) => setTimeout(resolve, ms));
+
+        // 50% chance AFTER delay
+        if (Math.random() < 0.5) {
+            this.throwRandomHttpError();
         }
 
-        // Simulate async work
-        return new Promise((resolve) => setTimeout(() => resolve(ms), ms));
+        return ms;
     }
 
-    // Public method to call heavy task
-    async slow(): Promise<{ status: string; message: string }> {
-        try {
-            const timeTaken = await this.doSomeHeavyTask();
-            return {
-                status: 'Success',
-                message: `Task completed in ${timeTaken} ms`,
-            };
-        } catch (error: any) {
-            throw error;
+    async slow() {
+        const timeTaken = await this.doSomeHeavyTask();
+
+        return {
+            status: 'Success',
+            message: `Task completed in ${timeTaken} ms`,
+        };
+    }
+
+    async fast() {
+        if (Math.random() < 0.15) {
+            this.throwRandomHttpError();
         }
-    }
 
-    // Example of a fast task
-    async fast(): Promise<{ status: string; message: string }> {
         return {
             status: 'Success',
             message: 'Fast task completed instantly',
         };
     }
 }
+
