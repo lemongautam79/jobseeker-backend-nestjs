@@ -15,7 +15,7 @@ services:
   grafana:
     image: grafana/grafana
     ports:
-      - "3001:3000"
+      - "3001:3000"    
 
   loki:
     image: grafana/loki:2.9.0
