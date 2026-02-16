@@ -40,6 +40,7 @@ export class TestService {
         return ms;
     }
 
+    //! Slow endpoint that simulates a heavy task and randomly throws HTTP errors
     async slow() {
         const timeTaken = await this.doSomeHeavyTask();
 
@@ -49,6 +50,8 @@ export class TestService {
         };
     }
 
+
+    //! Fast endpoint that randomly throws HTTP errors without delay
     async fast() {
         if (Math.random() < 0.15) {
             this.throwRandomHttpError();
