@@ -1,5 +1,5 @@
 // mail/mail.service.ts
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { Counter, Registry } from 'prom-client';
 
@@ -11,6 +11,7 @@ export class MailService {
   private transporter;
   private emailsSentCounter: Counter<string>;
   private register: Registry;
+  private readonly logger = new Logger(MailService.name)
 
   constructor() {
     this.transporter = nodemailer.createTransport({
@@ -49,7 +50,8 @@ export class MailService {
         text,
         html,
       });
-      console.log('Email sent:', info.messageId);
+      // console.log('Email sent:', info.messageId);
+      this.logger.debug(`Email sent to ${to} with subject "${subject}"`);
       // Increment success counter
       this.emailsSentCounter.inc({ status: 'success' });
     } catch (err) {

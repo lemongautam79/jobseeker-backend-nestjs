@@ -148,19 +148,6 @@ export class AnalyticsService {
       createdAt: Date;
     }>;
 
-    // const recentApplicationsDto = recentApplications.map(app => ({
-    //   applicant: {
-    //     name: app.applicant.name,
-    //     email: app.applicant.email,
-    //     avatar: app.applicant.avatar,
-    //   },
-    //   job: {
-    //     title: app.job.title,
-    //   },
-    //   status: app.status,
-    //   createdAt: app.createdAt,
-    // }));
-
     const recentApplicationsDto = recentApplications.map((app) => ({
       applicant: {
         name: app.applicant.name,
