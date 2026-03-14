@@ -7,6 +7,7 @@ import {
     PayloadTooLargeException,
     InternalServerErrorException,
 } from '@nestjs/common';
+import { trace } from "@opentelemetry/api";
 
 @Injectable()
 export class TestService {
@@ -42,8 +43,11 @@ export class TestService {
 
     //! Slow endpoint that simulates a heavy task and randomly throws HTTP errors
     async slow() {
+        const tracer = trace.getTracer('nestjs-service')
+        const span = tracer.startSpan("slowEndpoint");
         const timeTaken = await this.doSomeHeavyTask();
-
+        
+        span.end();
         return {
             status: 'Success',
             message: `Task completed in ${timeTaken} ms`,

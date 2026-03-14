@@ -1,9 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import * as bcrypt from 'bcrypt';
 import { ApiProperty } from '@nestjs/swagger';
-import { Exclude } from 'class-transformer';
-import { Role } from 'src/common/enums/role';
+import { Role } from '../../../common/enums/role';
 
 export type UserDocument = HydratedDocument<User>;
 
@@ -45,7 +43,12 @@ export class User {
     description: 'Provide the role of the User',
     required: true,
   })
-  @Prop({ required: true, enum: Role, default: Role.JOBSEEKER })
+  @Prop({
+    type: String,
+    required: true,
+    enum: Role,
+    default: Role.JOBSEEKER,
+  })
   role: Role;
 
   @ApiProperty({
