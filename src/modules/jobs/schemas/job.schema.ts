@@ -1,8 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { ApiProperty } from '@nestjs/swagger';
+
 import { JobType } from 'src/common/enums/jobType';
-import { User } from 'src/modules/users/schemas/user.schema';
+import { User } from '../../../modules/users/schemas/user.schema';
 
 export type JobDocument = Document & Job;
 
@@ -29,7 +30,7 @@ export class Job {
   category?: string;
 
   @ApiProperty({ enum: JobType })
-  @Prop({ required: true, enum: JobType })
+  @Prop({ required: true, enum: JobType, type: String })
   type: JobType;
 
   @ApiProperty({ type: String, description: 'Employer User ID' })

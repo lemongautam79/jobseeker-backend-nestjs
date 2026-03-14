@@ -5,16 +5,29 @@ import { JobsService } from './jobs.service';
 describe('JobsController', () => {
   let controller: JobsController;
 
+  const mockService = {
+    create: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [JobsController],
-      providers: [JobsService],
+      providers: [
+        { provide: JobsService, useValue: mockService },
+      ],
     }).compile();
 
     controller = module.get<JobsController>(JobsController);
   });
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined();
+  it('should call service.create', async () => {
+    mockService.create.mockResolvedValue({ title: 'Dev' });
+
+    const result = await controller.create(
+      { title: 'Dev' } as any,
+      { _id: '1', role: 'EMPLOYER' },
+    );
+
+    expect(result.title).toBe('Dev');
   });
 });
