@@ -1,8 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { ApiProperty } from '@nestjs/swagger';
+
 import { JobType } from 'src/common/enums/jobType';
-import { User } from 'src/modules/users/schemas/user.schema';
+import { User } from '../../../modules/users/schemas/user.schema';
 
 export type JobDocument = Document & Job;
 
@@ -29,7 +30,7 @@ export class Job {
   category?: string;
 
   @ApiProperty({ enum: JobType })
-  @Prop({ required: true, enum: JobType })
+  @Prop({ required: true, enum: JobType, type: String })
   type: JobType;
 
   @ApiProperty({ type: String, description: 'Employer User ID' })
@@ -56,3 +57,23 @@ export class Job {
 }
 
 export const JobSchema = SchemaFactory.createForClass(Job);
+
+// job search filters
+JobSchema.index({ isClosed: 1, category: 1, type: 1 });
+
+// employer jobs
+JobSchema.index({ company: 1, createdAt: -1 });
+
+// salary range filtering
+JobSchema.index({ salaryMin: 1, salaryMax: 1 });
+
+// latest open jobs
+JobSchema.index({ isClosed: 1, createdAt: -1 });
+
+// keyword search
+JobSchema.index({ title: "text", description: "text" });
+
+// For Analytics
+
+JobSchema.index({ company: 1, isClosed: 1 });
+JobSchema.index({ company: 1 });

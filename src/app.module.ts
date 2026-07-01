@@ -22,7 +22,7 @@ import { TestModule } from './modules/test/test.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: `.env`,
+      envFilePath: `.env.development.local`,
       validationSchema: envSchema,
       validationOptions: {
         abortEarly: true,

@@ -1,6 +1,7 @@
+import './tracing'; 
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication, Logger, Type, ValidationPipe, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -9,11 +10,60 @@ import cookieParser from 'cookie-parser';
 import { MetricsInterceptor } from './common/interceptors/metrics.interceptor';
 import { PrometheusLoggerMiddleware } from './common/middlewares/prometheus_logger/prometheus_logger.middleware';
 import { PrometheusService } from './common/prometheus/prometheus.service';
+import { DebuggedProvider, DebuggedTree, SpelunkerModule } from 'nestjs-spelunker';
+import * as fs from 'fs';
+import * as os from 'os';
 
+const generateModuleProvidersGraph = async (rootModule: Type<any>) => {
+  const dependencies = await SpelunkerModule.debug(rootModule);
 
+  let providerGraph = `graph LR\n`;
+
+  dependencies.forEach((module: DebuggedTree) => {
+    const moduleItems = [...module.providers, ...module.controllers];
+    moduleItems.forEach((moduleItem: DebuggedProvider) => {
+      return moduleItem.dependencies.forEach((dependency: string) => {
+        providerGraph += `  ${String(moduleItem.name)}-->${String(
+          dependency,
+        )}\n`;
+      });
+    });
+  });
+
+  const generateSubgraph = (module: DebuggedTree) => {
+    let subgraph = `  subgraph ${module.name}\n`;
+
+    const innerItems = Array.from(
+      new Set(
+        [...module.providers, ...module.controllers, ...module.exports].map(
+          (item: DebuggedProvider) => item.name,
+        )
+      )
+    );
+
+    innerItems.forEach((itemName) => {
+      subgraph += ` ${itemName}\n`;
+    });
+
+    subgraph += ' end\n';
+
+    return subgraph;
+  };
+
+  dependencies.forEach((module: DebuggedTree) => {
+    providerGraph += generateSubgraph(module);
+  });
+
+  return providerGraph;
+}
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // if (process.env.NODE_ENV === 'development') {
+  //   const moduleProvidersGraph = await generateModuleProvidersGraph(AppModule);
+  //   fs.writeFileSync('App.providers.mmd', moduleProvidersGraph)
+  // }
 
   app.use(cookieParser());
 
@@ -110,7 +160,24 @@ async function bootstrap() {
     middleware.use(req, res, next);
   });
 
-  await app.listen(process.env.PORT ?? 7000,'0.0.0.0');
+  // await app.listen(process.env.PORT ?? 7000, '0.0.0.0');
+
+  const port = process.env.PORT ?? 7000;
+  await app.listen(port, '0.0.0.0');
+
+  const networkInterfaces = os.networkInterfaces();
+
+  console.log(`🚀 Server running on:`);
+
+  for (const name of Object.keys(networkInterfaces)) {
+    for (const net of networkInterfaces[name]!) {
+      if (net.family === 'IPv4' && !net.internal) {
+        console.log(`http://${net.address}:${port}`);
+      }
+    }
+  }
+
+  console.log(`http://localhost:${port}`);
 }
 
 bootstrap().catch((error) => {
