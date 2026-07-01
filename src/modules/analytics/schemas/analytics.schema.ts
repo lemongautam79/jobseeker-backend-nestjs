@@ -7,6 +7,7 @@ export type AnalyticsDocument = Document & Analytics;
 
 @Schema({ timestamps: true })
 export class Analytics {
+  
   @ApiProperty({ type: String, description: 'Employer User ID' })
   @Prop({ type: Types.ObjectId, ref: User.name, required: true })
   employer: Types.ObjectId;
