@@ -1,0 +1,54 @@
+### Testing
+
+Fake Products Testing: Run Products Service Test
+npx jest src/modules/products/products.service.spec.ts
+npx jest src/modules/products/products.controller.spec.ts
+
+Run a single test 
+
+Testing Fundamentals
+│
+├── What is testing?
+├── Types of testing
+├── Jest basics
+│
+Unit Testing
+│
+├── Service tests
+├── Controller tests
+├── Utility tests
+├── Pipe tests
+├── Guard tests
+├── Interceptor tests
+├── Filter tests
+├── Decorator tests
+│
+Mocking
+│
+├── Mock services
+├── Mock repositories
+├── Mock Prisma/Drizzle
+├── Mock HTTP requests
+├── Mock JWT
+├── Mock Dates
+├── Mock Environment Variables
+│
+Integration Testing
+│
+├── Nest TestingModule
+├── In-memory database
+├── Test containers
+├── Supertest
+│
+E2E Testing
+│
+├── Login flow
+├── Protected routes
+├── File uploads
+├── Authentication
+│
+Coverage
+│
+├── Code coverage
+├── CI/CD
+└── GitHub Actions

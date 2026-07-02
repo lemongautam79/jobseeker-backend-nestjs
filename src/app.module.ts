@@ -18,6 +18,7 @@ import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { PrometheusModule } from './common/prometheus/prometheus.module';
 import { WinstonLoggerMiddleware } from './common/middlewares/winston_logger/winston.middleware';
 import { TestModule } from './modules/test/test.module';
+import { ProductsModule } from './modules/products/products.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -64,6 +65,8 @@ import { TestModule } from './modules/test/test.module';
     PrometheusModule,
 
     TestModule,
+
+    ProductsModule,
   ],
   controllers: [
     AppController,
