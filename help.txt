@@ -52,3 +52,7 @@ Coverage
 ├── Code coverage
 ├── CI/CD
 └── GitHub Actions
+
+
+### Integration Testing
+npx jest test/integration/users.integration.spec.ts
