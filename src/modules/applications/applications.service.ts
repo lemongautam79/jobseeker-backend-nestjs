@@ -11,6 +11,7 @@ import { Model, Types } from 'mongoose';
 import { Job, JobDocument } from '../jobs/schemas/job.schema';
 import { ApplicationStatus } from '../../common/enums/applicationStatus';
 import { MailService } from '../mail/mail.service';
+import { calculateRecommendationScore } from '../../common/utils/calculateRecommendationScore';
 
 /**
  *! Job Application Service
@@ -45,7 +46,7 @@ export class ApplicationsService {
       job: new Types.ObjectId(jobId),
       applicant: new Types.ObjectId(user._id),
     });
-    
+
     if (existing) throw new BadRequestException('Already applied to this job');
 
     const application = await this.applicationModel.create({
@@ -78,10 +79,34 @@ export class ApplicationsService {
       throw new ForbiddenException('Not authorized to view applicants');
     }
 
-    return this.applicationModel
+    const applications = await this.applicationModel
       .find({ job: new Types.ObjectId(jobId) })
       .populate('job', 'title location category type')
-      .populate('applicant', 'name email avatar resume');
+      .populate(
+        'applicant',
+        'name email avatar resume skills preferredCategory preferredLocation experience',
+      );
+
+    const result = applications.map((application) => {
+      const applicant = application.applicant as any;
+
+      const recommendationScore = calculateRecommendationScore(
+        applicant,
+        job,
+      );
+
+      return {
+        ...application.toObject(),
+        recommendationScore,
+        recommendationPercentage: Math.round(recommendationScore * 100),
+      };
+    });
+
+    result.sort(
+      (a, b) => b.recommendationScore - a.recommendationScore,
+    );
+
+    return result;
   }
 
   /**
