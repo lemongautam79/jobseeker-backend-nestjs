@@ -20,6 +20,30 @@ export class User {
   @Prop({ required: true })
   name!: string;
 
+
+  //! Recommendation Engine ko start
+  @ApiProperty({
+    example: '"React", "NestJS", "MongoDB","Docker"',
+    description: 'Add list of skills',
+    required: false,
+  })
+  @Prop({ type: [String], default: [] })
+  skills?: string[];
+
+  @ApiProperty({ example: 3 })
+  @Prop({ required: false })
+  experience?: number;
+
+  @ApiProperty({ example: 'Engineering', required: false })
+  @Prop({ required: false })
+  preferredCategory?: string;
+
+  @ApiProperty({ example: 'Kathmandu, Nepal' })
+  @Prop({ required: false })
+  preferredLocation?: string;
+  
+  //! Recommendation Engine ko end
+
   @ApiProperty({
     example: 'johndoe@gmail.com',
     description: 'Provide the email of the User',
