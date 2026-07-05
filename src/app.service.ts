@@ -1,10 +1,20 @@
 import { Injectable } from '@nestjs/common';
+import { RedisService } from './modules/redis/redis.service';
 
 /**
  *! App Service
  */
 @Injectable()
 export class AppService {
+
+    constructor(
+        private readonly redisService: RedisService
+    ) { }
+
+    async onModuleInit() {
+        console.log(await this.redisService.ping());
+    }
+
     getHello(): string {
         return `
 <!DOCTYPE html>
