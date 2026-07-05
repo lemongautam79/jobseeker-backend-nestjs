@@ -20,6 +20,10 @@ import {
 } from '../savedJobs/schemas/savedJob.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { calculateRecommendationScore } from '../../common/utils/calculateRecommendationScore';
+import { RedisService } from '../redis/redis.service';
+import { CacheKeys } from '../../common/cache/cache.keys';
+import { CacheTTL } from '../../common/cache/cache.ttl';
+import { JobCacheService } from './job-cache.service';
 
 /**
  *! Job Service
@@ -32,7 +36,189 @@ export class JobsService {
     @InjectModel(Application.name) private appModel: Model<ApplicationDocument>,
     @InjectModel(SavedJob.name) private savedJobModel: Model<SavedJobDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+
+    private readonly redisService: RedisService,
+    private readonly jobCacheService: JobCacheService,
   ) { }
+
+  //! Find All Jobs Ko Values haru
+  private buildJobQuery(queryDto: JobQueryDto) {
+    const {
+      keyword,
+      location,
+      category,
+      type,
+      minSalary,
+      maxSalary,
+    } = queryDto;
+
+    const query: any = {
+      isClosed: false,
+    };
+
+    if (keyword) {
+      query.title = {
+        $regex: keyword,
+        $options: 'i',
+      };
+    }
+
+    if (location) {
+      query.location = {
+        $regex: location,
+        $options: 'i',
+      };
+    }
+
+    if (category) {
+      query.category = category;
+    }
+
+    if (type) {
+      query.type = type;
+    }
+
+    if (minSalary || maxSalary) {
+      query.$and = [];
+
+      if (minSalary) {
+        query.$and.push({
+          salaryMax: {
+            $gte: minSalary,
+          },
+        });
+      }
+
+      if (maxSalary) {
+        query.$and.push({
+          salaryMin: {
+            $lte: maxSalary,
+          },
+        });
+      }
+    }
+
+    return query;
+  }
+
+  private async getJobs(query: any) {
+    return this.jobModel
+      .find(query)
+      .populate(
+        'company',
+        'name companyName companyLogo',
+      )
+      .lean();
+  }
+
+  private async getUserContext(userId?: string) {
+    if (!userId) {
+      return {
+        user: null,
+        savedIdSet: new Set<string>(),
+        appliedMap: {},
+      };
+    }
+
+    const uid = new Types.ObjectId(userId);
+
+    const user = await this.userModel
+      .findById(uid)
+      .lean();
+
+    if (!user) {
+      throw new NotFoundException(
+        'User not found',
+      );
+    }
+
+    const [savedJobs, applications] =
+      await Promise.all([
+        this.savedJobModel
+          .find({
+            jobseeker: uid,
+          })
+          .select('job'),
+
+        this.appModel
+          .find({
+            applicant: uid,
+          })
+          .select('job status'),
+      ]);
+
+    const savedIdSet = new Set(
+      savedJobs.map((job) =>
+        job.job.toString(),
+      ),
+    );
+
+    const appliedMap: Record<string, string> =
+      {};
+
+    applications.forEach((application) => {
+      appliedMap[
+        application.job.toString()
+      ] = application.status;
+    });
+
+    return {
+      user,
+      savedIdSet,
+      appliedMap,
+    };
+  }
+
+  private enrichJobs(
+    jobs: any[],
+    user: any,
+    savedIdSet: Set<string>,
+    appliedMap: Record<string, string>,
+  ) {
+    return jobs.map((job) => {
+      const id = job._id.toString();
+
+      const recommendationScore = user
+        ? calculateRecommendationScore(
+          user,
+          job,
+        )
+        : 0;
+
+      return {
+        ...job,
+
+        isSaved: savedIdSet.has(id),
+
+        applicationStatus:
+          appliedMap[id] ?? null,
+
+        recommendationScore,
+
+        isRecommended:
+          recommendationScore >= 0.4,
+      };
+    });
+  }
+
+  private sortJobs(jobs: any[]) {
+    return jobs.sort((a, b) => {
+      if (
+        a.isRecommended !==
+        b.isRecommended
+      ) {
+        return (
+          Number(b.isRecommended) -
+          Number(a.isRecommended)
+        );
+      }
+
+      return (
+        b.recommendationScore -
+        a.recommendationScore
+      );
+    });
+  }
 
   /**
    *! Create Job
@@ -42,113 +228,149 @@ export class JobsService {
       throw new ForbiddenException('Only employers can post jobs');
     }
 
-    return this.jobModel.create({
+    const job = await this.jobModel.create({
       ...createJobDto,
-      company: user._id,
+      company: user._id
     });
+    await this.jobCacheService.invalidateAfterMutation(
+      job._id.toString(),
+      user._id.toString(),
+    );
+    return job;
   }
 
   /**
    *! Get All Jobs with Queries
    */
+  // async findAll(queryDto: JobQueryDto) {
+  //   const { keyword, location, category, type, minSalary, maxSalary, userId } =
+  //     queryDto;
+
+  //   const query: any = {
+  //     isClosed: false,
+  //     ...(keyword && { title: { $regex: keyword, $options: 'i' } }),
+  //     ...(location && { location: { $regex: location, $options: 'i' } }),
+  //     ...(category && { category }),
+  //     ...(type && { type }),
+  //   };
+
+  //   if (minSalary || maxSalary) {
+  //     query.$and = [];
+  //     if (minSalary) query.$and.push({ salaryMax: { $gte: minSalary } });
+  //     if (maxSalary) query.$and.push({ salaryMin: { $lte: maxSalary } });
+  //   }
+
+  //   const jobs = await this.jobModel
+  //     .find(query)
+  //     .populate({
+  //       path: 'company',
+  //       select: 'name companyName companyLogo',
+  //     })
+  //     .lean();
+
+  //   let user: any = null;
+
+  //   if (userId) {
+  //     user = await this.userModel.findById(userId).lean();
+
+  //     if (!user) {
+  //       throw new NotFoundException('User not found');
+  //     }
+  //   }
+
+  //   let savedIdSet = new Set<string>();
+  //   const appliedMap: Record<string, string> = {};
+
+  //   if (userId) {
+  //     const uid = new Types.ObjectId(userId);
+
+  //     user = await this.userModel.findById(uid).lean();
+
+  //     if (!user) {
+  //       throw new NotFoundException('User not found');
+  //     }
+
+  //     const saved = await this.savedJobModel
+  //       .find({ jobseeker: uid })
+  //       .select('job');
+
+  //     savedIdSet = new Set(saved.map((s) => s.job.toString()));
+
+  //     const apps = await this.appModel
+  //       .find({ applicant: uid })
+  //       .select('job status');
+
+  //     apps.forEach((app) => {
+  //       appliedMap[String(app.job)] = app.status;
+  //     });
+  //   }
+
+  //   const result = jobs.map((job) => {
+  //     const id = String(job._id);
+
+  //     const recommendationScore = user
+  //       ? calculateRecommendationScore(user, job)
+  //       : 0;
+
+  //     return {
+  //       ...job,
+  //       isSaved: savedIdSet.has(id),
+  //       applicationStatus: appliedMap[id] || null,
+  //       recommendationScore,
+  //       isRecommended: recommendationScore >= 0.4,
+  //     };
+  //   });
+
+  //   result.sort((a, b) => {
+  //     if (a.isRecommended !== b.isRecommended) {
+  //       return Number(b.isRecommended) - Number(a.isRecommended);
+  //     }
+
+  //     return b.recommendationScore - a.recommendationScore;
+  //   });
+
+  //   return result;
+
+  // }
+
   async findAll(queryDto: JobQueryDto) {
-    const { keyword, location, category, type, minSalary, maxSalary, userId } =
-      queryDto;
+    const query = this.buildJobQuery(queryDto);
 
-    const query: any = {
-      isClosed: false,
-      ...(keyword && { title: { $regex: keyword, $options: 'i' } }),
-      ...(location && { location: { $regex: location, $options: 'i' } }),
-      ...(category && { category }),
-      ...(type && { type }),
-    };
+    const jobs = await this.getJobs(query);
 
-    if (minSalary || maxSalary) {
-      query.$and = [];
-      if (minSalary) query.$and.push({ salaryMax: { $gte: minSalary } });
-      if (maxSalary) query.$and.push({ salaryMin: { $lte: maxSalary } });
-    }
+    const {
+      user,
+      savedIdSet,
+      appliedMap,
+    } = await this.getUserContext(queryDto.userId);
 
-    const jobs = await this.jobModel
-      .find(query)
-      .populate({
-        path: 'company',
-        select: 'name companyName companyLogo',
-      })
-      .lean();
+    const enrichedJobs = this.enrichJobs(
+      jobs,
+      user,
+      savedIdSet,
+      appliedMap,
+    );
 
-    let user: any = null;
-
-    if (userId) {
-      user = await this.userModel.findById(userId).lean();
-
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-    }
-
-    let savedIdSet = new Set<string>();
-    const appliedMap: Record<string, string> = {};
-
-    if (userId) {
-      const uid = new Types.ObjectId(userId);
-
-      user = await this.userModel.findById(uid).lean();
-
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-
-      const saved = await this.savedJobModel
-        .find({ jobseeker: uid })
-        .select('job');
-
-      // savedIds = saved.map(s => String(s.job));
-      savedIdSet = new Set(saved.map((s) => s.job.toString()));
-
-      const apps = await this.appModel
-        .find({ applicant: uid })
-        .select('job status');
-
-      apps.forEach((app) => {
-        appliedMap[String(app.job)] = app.status;
-        // appliedMap[app.job.toString()] = app.status;
-      });
-    }
-
-    const result = jobs.map((job) => {
-      const id = String(job._id);
-
-      const recommendationScore = user
-        ? calculateRecommendationScore(user, job)
-        : 0;
-
-      return {
-        ...job,
-        isSaved: savedIdSet.has(id),
-        applicationStatus: appliedMap[id] || null,
-        recommendationScore,
-        isRecommended: recommendationScore >= 0.4,
-      };
-    });
-
-    result.sort((a, b) => {
-      if (a.isRecommended !== b.isRecommended) {
-        return Number(b.isRecommended) - Number(a.isRecommended);
-      }
-
-      return b.recommendationScore - a.recommendationScore;
-    });
-
-    return result;
-
+    return this.sortJobs(enrichedJobs);
   }
 
   /**
    *! Get All Jobs Without Queries
    */
   async findJobsWithoutFilters() {
-    return this.jobModel.find({ isClosed: false });
+    return this.redisService.remember(
+      CacheKeys.jobs(),
+      async () => {
+        return this.jobModel
+          .find({ isClosed: false })
+          .populate(
+            'company',
+            'name companyName companyLogo',
+          )
+          .lean();
+      },
+      CacheTTL.FIVE_MINUTES,
+    );
   }
 
 
@@ -157,21 +379,68 @@ export class JobsService {
    */
   async findEmployerJobs(user: any) {
     if (user.role !== 'EMPLOYER') {
-      throw new ForbiddenException('Access denied');
+      throw new ForbiddenException(
+        'Access denied',
+      );
     }
 
-    const jobs = await this.jobModel
-      .find({ company: user._id })
-      .populate('company', 'name companyName companyLogo')
-      .lean();
+    return this.redisService.remember(
+      CacheKeys.employerJobs(
+        user._id.toString(),
+      ),
+      async () => {
+        const jobs = await this.jobModel
+          .find({
+            company: user._id,
+          })
+          .populate(
+            'company',
+            'name companyName companyLogo',
+          )
+          .lean();
 
-    return Promise.all(
-      jobs.map(async (job) => ({
-        ...job,
-        applicationCount: await this.appModel.countDocuments({
-          job: new Types.ObjectId(job._id),
-        }),
-      })),
+        const jobIds = jobs.map(
+          (job) => job._id,
+        );
+
+        const applicationCounts =
+          await this.appModel.aggregate([
+            {
+              $match: {
+                job: {
+                  $in: jobIds,
+                },
+              },
+            },
+            {
+              $group: {
+                _id: '$job',
+                count: {
+                  $sum: 1,
+                },
+              },
+            },
+          ]);
+
+        const applicationCountMap =
+          new Map(
+            applicationCounts.map(
+              (item) => [
+                item._id.toString(),
+                item.count,
+              ],
+            ),
+          );
+
+        return jobs.map((job) => ({
+          ...job,
+          applicationCount:
+            applicationCountMap.get(
+              job._id.toString(),
+            ) ?? 0,
+        }));
+      },
+      CacheTTL.FIVE_MINUTES,
     );
   }
 
@@ -179,25 +448,44 @@ export class JobsService {
    *! Get Job by id
    */
   async findOne(id: string, userId?: string) {
+    const job = await this.redisService.remember(
+      CacheKeys.job(id),
+      async () => {
+        const job = await this.jobModel
+          .findById(id)
+          .populate(
+            'company',
+            'name companyName companyLogo',
+          )
+          .lean();
 
-    const job = await this.jobModel
-      .findById(id)
-      .populate('company', 'name companyName companyLogo');
+        if (!job) {
+          throw new NotFoundException(
+            'Job not found',
+          );
+        }
 
-    if (!job) throw new NotFoundException('Job not found');
+        return job;
+      },
+      CacheTTL.FIVE_MINUTES,
+    );
 
-    let applicationStatus: ApplicationStatus | null = null;
+    let applicationStatus: ApplicationStatus | null =
+      null;
 
     if (userId && Types.ObjectId.isValid(userId)) {
       const app = await this.appModel.findOne({
-        job: job._id,
+        job: new Types.ObjectId(id),
         applicant: new Types.ObjectId(userId),
       });
 
       applicationStatus = app?.status ?? null;
     }
 
-    return { ...job.toObject(), applicationStatus };
+    return {
+      ...job,
+      applicationStatus,
+    };
   }
 
   /**
@@ -212,7 +500,14 @@ export class JobsService {
     }
 
     Object.assign(job, dto);
-    return job.save();
+    await job.save();
+
+    await this.jobCacheService.invalidateAfterMutation(
+      job._id.toString(),
+      user._id.toString(),
+    );
+
+    return job;
   }
 
   /**
@@ -227,6 +522,12 @@ export class JobsService {
     }
 
     await job.deleteOne();
+
+    await this.jobCacheService.invalidateAfterMutation(
+      job._id.toString(),
+      user._id.toString(),
+    );
+
     return { message: 'Job deleted successfully' };
   }
 
@@ -244,36 +545,60 @@ export class JobsService {
     job.isClosed = !job.isClosed;
     await job.save();
 
+    await this.jobCacheService.invalidateAfterMutation(
+      job._id.toString(),
+      user._id.toString(),
+    );
+
+
     return { message: 'Job status updated' };
   }
 
   //! Recommendation ko lagi
   async getRecommendedJobs(userId: string) {
+    return this.redisService.remember(
+      CacheKeys.recommendations(userId),
+      async () => {
+        const user = await this.userModel
+          .findById(userId)
+          .lean();
 
-    const user = await this.userModel.findById(userId).lean();
+        if (!user) {
+          throw new NotFoundException(
+            'User not found',
+          );
+        }
 
-    if (!user) {
-      throw new NotFoundException();
-    }
+        const jobs = await this.jobModel
+          .find({
+            isClosed: false,
+          })
+          .populate(
+            'company',
+            'name companyName companyLogo',
+          )
+          .lean();
 
-    const jobs = await this.jobModel.find({
-      isClosed: false,
-    });
-
-    const recommendations = jobs
-      .map(job => ({
-        ...job.toObject(),
-        recommendationScore:
-          calculateRecommendationScore(user, job),
-      }))
-      .sort(
-        (a, b) =>
-          b.recommendationScore -
-          a.recommendationScore,
-      );
-
-    return recommendations.filter(
-      job => job.recommendationScore >= 0.4
+        return jobs
+          .map((job) => ({
+            ...job,
+            recommendationScore:
+              calculateRecommendationScore(
+                user,
+                job,
+              ),
+          }))
+          .filter(
+            (job) =>
+              job.recommendationScore >= 0.4,
+          )
+          .sort(
+            (a, b) =>
+              b.recommendationScore -
+              a.recommendationScore,
+          );
+      },
+      CacheTTL.RECOMMENDATIONS,
     );
   }
 }
