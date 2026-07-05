@@ -19,6 +19,7 @@ import { PrometheusModule } from './common/prometheus/prometheus.module';
 import { WinstonLoggerMiddleware } from './common/middlewares/winston_logger/winston.middleware';
 import { TestModule } from './modules/test/test.module';
 import { ProductsModule } from './modules/products/products.module';
+import { RedisModule } from './modules/redis/redis.module';
 
 @Module({
   imports: [
@@ -63,6 +64,9 @@ import { ProductsModule } from './modules/products/products.module';
         skipIf: () => process.env.NODE_ENV === 'test',
       },
     ]),
+
+    //! Redis
+    RedisModule,
 
     //! Other packages
     AuthModule,
