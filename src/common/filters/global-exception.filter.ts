@@ -28,7 +28,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     if (
       exception instanceof HttpException &&
-      request.originalUrl === '/health'
+      request.originalUrl === '/api/health'
     ) {
       response.status(exception.getStatus()).json(
         exception.getResponse(),
