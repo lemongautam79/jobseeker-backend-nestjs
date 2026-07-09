@@ -11,11 +11,27 @@ export class AppService {
         private readonly redisService: RedisService
     ) { }
 
-    async onModuleInit() {
-        console.log(await this.redisService.ping());
-    }
+    // async onModuleInit() {
+    //     console.log(await this.redisService.ping());
+    // }
 
     getHello(): string {
+        const environment =
+            process.env.NODE_ENV === 'production'
+                ? 'Production'
+                : process.env.NODE_ENV === 'development'
+                    ? 'Development'
+                    : process.env.NODE_ENV ?? 'Unknown';
+
+        const statusColor =
+            process.env.NODE_ENV === 'production'
+                ? '#dcfce7'
+                : '#fef3c7';
+
+        const statusTextColor =
+            process.env.NODE_ENV === 'production'
+                ? '#166534'
+                : '#92400e';
         return `
 <!DOCTYPE html>
 <html lang="en">
@@ -131,7 +147,7 @@ analytics and user management.
 <ul>
 <li><strong>Version:</strong> 1.0.0</li>
 <li><strong>Status:</strong> Running</li>
-<li><strong>Environment:</strong> Development</li>
+<li><strong>Environment:</strong> ${environment}</li>
 </ul>
 </div>
 
