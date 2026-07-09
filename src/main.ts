@@ -117,6 +117,12 @@ async function bootstrap() {
       .swagger-ui .info { margin: 50px 0; }
       .swagger-ui .info .title {color: #4A90E2;}
     `,
+    customCssUrl:
+      'https://unpkg.com/swagger-ui-dist/swagger-ui.css',
+    customJs: [
+      'https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js',
+      'https://unpkg.com/swagger-ui-dist/swagger-ui-standalone-preset.js',
+    ],
   });
 
   // app.useGlobalInterceptors(app.get(MetricsInterceptor));
