@@ -98,7 +98,14 @@ async function bootstrap() {
     //   },
     //   'JWT-refresh',
     // )
-    .addServer('http://localhost:7000', 'Development server')
+    .addServer(
+      process.env.NODE_ENV === 'production'
+        ? 'https://api.jobseeker.lemongautam.com.np'
+        : 'http://localhost:7000',
+      process.env.NODE_ENV === 'production'
+        ? 'Production server'
+        : 'Development server',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
