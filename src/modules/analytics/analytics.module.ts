@@ -8,6 +8,7 @@ import {
   Application,
   ApplicationSchema,
 } from '../applications/schemas/application.schema';
+import { AppLoggerModule } from '../../common/logger/logger.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import {
       { name: Job.name, schema: JobSchema },
       { name: Application.name, schema: ApplicationSchema },
     ]),
+    AppLoggerModule
   ],
   controllers: [AnalyticsController],
   providers: [AnalyticsService],

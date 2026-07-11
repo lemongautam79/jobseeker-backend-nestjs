@@ -5,11 +5,13 @@ import { TerminusModule } from '@nestjs/terminus';
 import { HealthController } from './health.controller';
 import { RedisModule } from '../../modules/redis/redis.module';
 import { RedisHealthIndicator } from './RedisHealthIndicator';
+import { AppLoggerModule } from '../logger/logger.module';
 
 @Module({
     imports: [
         TerminusModule,
-        RedisModule
+        RedisModule,
+        AppLoggerModule
     ],
     controllers: [HealthController],
     providers:[RedisHealthIndicator]

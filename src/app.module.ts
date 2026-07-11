@@ -16,7 +16,6 @@ import { envSchema } from './common/config/env.schema';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { PrometheusModule } from './common/prometheus/prometheus.module';
-import { WinstonLoggerMiddleware } from './common/middlewares/winston_logger/winston.middleware';
 import { TestModule } from './modules/test/test.module';
 import { ProductsModule } from './modules/products/products.module';
 import { RedisModule } from './modules/redis/redis.module';

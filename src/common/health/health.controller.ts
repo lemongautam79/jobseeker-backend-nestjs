@@ -10,6 +10,7 @@ import { MongooseHealthIndicator, MemoryHealthIndicator, DiskHealthIndicator } f
 import { RedisService } from '../../modules/redis/redis.service';
 import { RedisHealthIndicator } from './RedisHealthIndicator';
 import { SpanStatusCode, trace } from '@opentelemetry/api';
+import { LoggerService } from '../logger/logger.service';
 
 @Controller('health')
 export class HealthController {
@@ -19,11 +20,14 @@ export class HealthController {
         private readonly memory: MemoryHealthIndicator,
         private readonly disk: DiskHealthIndicator,
         private readonly redis: RedisHealthIndicator,
+        private readonly logger: LoggerService,
 
         @InjectConnection()
         private readonly connection: Connection,
 
-    ) { }
+    ) {
+        this.logger.setContext('HealthCheck')
+    }
 
     @Get()
     @HealthCheck()
@@ -31,6 +35,7 @@ export class HealthController {
         const tracer = trace.getTracer('health-controller');
 
         return tracer.startActiveSpan('health.check', async (span) => {
+            this.logger.info('Health check started');
             try {
                 span.setAttribute('health.endpoint', '/health');
                 span.setAttribute('health.type', 'readiness');
@@ -62,6 +67,11 @@ export class HealthController {
                             thresholdPercent: 0.9,
                         }),
                 ]);
+
+                this.logger.info('Health check completed successfully', {
+                    status: result.status,
+                    details: result.details,
+                });
 
                 span.setAttribute('health.status', result.status);
 

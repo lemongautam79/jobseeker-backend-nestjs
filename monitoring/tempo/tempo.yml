@@ -48,7 +48,7 @@ ingester:
 
 compactor:
   compaction:
-    block_retention: 24h
+    block_retention: 72h
 
 storage:
   trace:
