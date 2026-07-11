@@ -8,7 +8,18 @@ import {
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { randomUUID } from 'crypto';
+
+const tempoExporter = new OTLPTraceExporter({
+    url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+        ?? 'tempo:4317',
+});
+
+const jaegerExporter = new OTLPTraceExporter({
+    url: process.env.OTEL_EXPORTER_JAEGER_ENDPOINT
+        ?? 'jaeger:4317',
+});
 
 const sdk = new NodeSDK({
     resource: resourceFromAttributes({
@@ -16,11 +27,13 @@ const sdk = new NodeSDK({
         [ATTR_SERVICE_VERSION]: '1.0.0',
         'deployment.environment': process.env.NODE_ENV ?? 'development',
         'service.instance.id': randomUUID(),
+        'service.namespace': 'jobseeker',
     }),
 
-    traceExporter: new OTLPTraceExporter({
-        url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? 'http://tempo:4317',
-    }),
+    spanProcessors: [
+        new BatchSpanProcessor(tempoExporter),
+        new BatchSpanProcessor(jaegerExporter),
+    ],
 
     instrumentations: [
         getNodeAutoInstrumentations({
