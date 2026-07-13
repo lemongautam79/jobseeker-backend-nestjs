@@ -22,6 +22,7 @@ docker-compose.yml
 monitoring
 nginx
 tempo
+infra
 
 # git & config
 .git

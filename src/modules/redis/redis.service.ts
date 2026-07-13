@@ -95,30 +95,6 @@ export class RedisService {
         callback: () => Promise<T>,
         ttl = 300,
     ): Promise<T> {
-        // try {
-        //     const cached = await this.get<T>(key);
-
-        //     if (cached !== null) {
-        //         this.logger.debug(`[CACHE HIT] ${key}`);
-        //         return cached;
-        //     }
-
-        //     this.logger.debug(`[CACHE MISS] ${key}`);
-
-        //     const data = await callback();
-
-        //     await this.set(key, data, ttl);
-
-        //     return data;
-        // } catch (error) {
-        //     this.logger.warn(
-        //         `Redis unavailable. Falling back to database for key: ${key}`,
-        //         error instanceof Error ? error.stack : undefined,
-        //     );
-
-        //     return callback();
-        // }
-
         try {
             const cached = await this.get<T>(key);
 
